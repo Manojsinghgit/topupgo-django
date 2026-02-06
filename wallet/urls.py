@@ -1,0 +1,17 @@
+from django.urls import path
+
+from .views import (
+    TransactionDetailAPIView,
+    TransactionListCreateAPIView,
+    WalletDetailAPIView,
+    WalletListCreateAPIView,
+)
+
+app_name = "wallet"
+
+urlpatterns = [
+    path("wallets/", WalletListCreateAPIView.as_view(), name="wallet-list-create"),
+    path("wallets/<int:pk>/", WalletDetailAPIView.as_view(), name="wallet-detail"),
+    path("transactions/", TransactionListCreateAPIView.as_view(), name="transaction-list-create"),
+    path("transactions/<int:pk>/", TransactionDetailAPIView.as_view(), name="transaction-detail"),
+]

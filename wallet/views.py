@@ -3,9 +3,38 @@ from decimal import Decimal
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 from account.models import Account
 from .models import Transaction, Wallet
+
+# OpenAPI request body schemas for Swagger UI
+_WALLET_BODY_SCHEMA = openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    required=["account", "address"],
+    properties={
+        "account": openapi.Schema(type=openapi.TYPE_INTEGER, description="Account ID"),
+        "address": openapi.Schema(type=openapi.TYPE_STRING, description="Wallet address (unique)"),
+        "wallet_type": openapi.Schema(type=openapi.TYPE_STRING, description="e.g. metamask, trust"),
+        "balance": openapi.Schema(type=openapi.TYPE_NUMBER, description="Initial balance", default=0),
+    },
+)
+_TRANSACTION_BODY_SCHEMA = openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    required=["transaction_id", "wallet", "amount", "final_amount", "transaction_type"],
+    properties={
+        "transaction_id": openapi.Schema(type=openapi.TYPE_STRING, description="Unique transaction id"),
+        "wallet": openapi.Schema(type=openapi.TYPE_INTEGER, description="Wallet ID"),
+        "amount": openapi.Schema(type=openapi.TYPE_NUMBER),
+        "fee": openapi.Schema(type=openapi.TYPE_NUMBER, default=0),
+        "final_amount": openapi.Schema(type=openapi.TYPE_NUMBER),
+        "transaction_type": openapi.Schema(type=openapi.TYPE_STRING, description="e.g. credit, debit, transfer"),
+        "status": openapi.Schema(type=openapi.TYPE_STRING, description="e.g. pending, completed, failed", default="pending"),
+        "description": openapi.Schema(type=openapi.TYPE_STRING),
+        "metadata": openapi.Schema(type=openapi.TYPE_OBJECT, description="Optional JSON object"),
+    },
+)
 
 
 def _wallet_to_dict(wallet):
@@ -98,6 +127,10 @@ class WalletListCreateAPIView(APIView):
         payload = [_wallet_to_dict(w) for w in wallets]
         return Response(payload)
 
+    @swagger_auto_schema(
+        request_body=_WALLET_BODY_SCHEMA,
+        responses={201: openapi.Response(description="Wallet created")},
+    )
     def post(self, request):
         data = request.data
         is_valid, result = _validate_wallet_create(data)
@@ -131,6 +164,10 @@ class WalletDetailAPIView(APIView):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(_wallet_to_dict(wallet))
 
+    @swagger_auto_schema(
+        request_body=_WALLET_BODY_SCHEMA,
+        responses={200: openapi.Response(description="Wallet updated")},
+    )
     def put(self, request, pk):
         wallet = self.get_object(pk)
         if wallet is None:
@@ -149,6 +186,10 @@ class WalletDetailAPIView(APIView):
         wallet.save()
         return Response(_wallet_to_dict(wallet))
 
+    @swagger_auto_schema(
+        request_body=_WALLET_BODY_SCHEMA,
+        responses={200: openapi.Response(description="Wallet updated")},
+    )
     def patch(self, request, pk):
         wallet = self.get_object(pk)
         if wallet is None:
@@ -192,6 +233,10 @@ class TransactionListCreateAPIView(APIView):
         payload = [_transaction_to_dict(t) for t in transactions]
         return Response(payload)
 
+    @swagger_auto_schema(
+        request_body=_TRANSACTION_BODY_SCHEMA,
+        responses={201: openapi.Response(description="Transaction created")},
+    )
     def post(self, request):
         data = request.data
         is_valid, result = _validate_transaction_create(data)
@@ -237,6 +282,10 @@ class TransactionDetailAPIView(APIView):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(_transaction_to_dict(transaction))
 
+    @swagger_auto_schema(
+        request_body=_TRANSACTION_BODY_SCHEMA,
+        responses={200: openapi.Response(description="Transaction updated")},
+    )
     def put(self, request, pk):
         transaction = self.get_object(pk)
         if transaction is None:
@@ -252,6 +301,10 @@ class TransactionDetailAPIView(APIView):
         transaction.save()
         return Response(_transaction_to_dict(transaction))
 
+    @swagger_auto_schema(
+        request_body=_TRANSACTION_BODY_SCHEMA,
+        responses={200: openapi.Response(description="Transaction updated")},
+    )
     def patch(self, request, pk):
         transaction = self.get_object(pk)
         if transaction is None:

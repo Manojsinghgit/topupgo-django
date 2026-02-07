@@ -2,6 +2,8 @@ from decimal import Decimal
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 from .models import Account
 
@@ -57,6 +59,21 @@ def _validate_account_update(data, instance):
     return True, data
 
 
+# OpenAPI request body schema for account create/update (Swagger UI body field)
+_ACCOUNT_BODY_SCHEMA = openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    required=["email", "username"],
+    properties={
+        "email": openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_EMAIL, description="Account email"),
+        "username": openapi.Schema(type=openapi.TYPE_STRING, description="Unique username"),
+        "phone_no": openapi.Schema(type=openapi.TYPE_STRING, description="Phone number"),
+        "first_name": openapi.Schema(type=openapi.TYPE_STRING),
+        "last_name": openapi.Schema(type=openapi.TYPE_STRING),
+        "date_of_birth": openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATE, description="YYYY-MM-DD"),
+        "is_verified": openapi.Schema(type=openapi.TYPE_BOOLEAN, default=False),
+    },
+)
+
 class AccountListCreateAPIView(APIView):
     """
     GET: List all active accounts.
@@ -68,6 +85,10 @@ class AccountListCreateAPIView(APIView):
         payload = [_account_to_dict(a) for a in accounts]
         return Response(payload)
 
+    @swagger_auto_schema(
+        request_body=_ACCOUNT_BODY_SCHEMA,
+        responses={201: openapi.Response(description="Account created")},
+    )
     def post(self, request):
         data = request.data
         is_valid, result = _validate_account_create(data)
@@ -106,6 +127,10 @@ class AccountDetailAPIView(APIView):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(_account_to_dict(account))
 
+    @swagger_auto_schema(
+        request_body=_ACCOUNT_BODY_SCHEMA,
+        responses={200: openapi.Response(description="Account updated")},
+    )
     def put(self, request, pk):
         account = self.get_object(pk)
         if account is None:
@@ -126,6 +151,10 @@ class AccountDetailAPIView(APIView):
         account.save()
         return Response(_account_to_dict(account))
 
+    @swagger_auto_schema(
+        request_body=_ACCOUNT_BODY_SCHEMA,
+        responses={200: openapi.Response(description="Account updated")},
+    )
     def patch(self, request, pk):
         account = self.get_object(pk)
         if account is None:

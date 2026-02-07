@@ -20,6 +20,16 @@ urlpatterns = [
         name="account-exists"
     ),
     path(
+        "account/token/refresh/",
+        views.TokenRefreshAPIView.as_view(),
+        name="token-refresh"
+    ),
+    path(
+        "account/me/",
+        views.AccountMeAPIView.as_view(),
+        name="account-me"
+    ),
+    path(
         "account-detail-by-email/",
         views.AccountDetailByEmailAPIView.as_view(),
         name="account-detail-by-email"

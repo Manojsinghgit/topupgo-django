@@ -118,6 +118,7 @@ class WalletListCreateAPIView(APIView):
     GET: List wallets. POST: Create wallet. All logic in view.
     """
 
+    @swagger_auto_schema(tags=["Wallet"], operation_summary="List wallets")
     def get(self, request):
         wallets = (
             Wallet.objects.filter(is_active=True)
@@ -128,6 +129,8 @@ class WalletListCreateAPIView(APIView):
         return Response(payload)
 
     @swagger_auto_schema(
+        tags=["Wallet"],
+        operation_summary="Create wallet",
         request_body=_WALLET_BODY_SCHEMA,
         responses={201: openapi.Response(description="Wallet created")},
     )
@@ -158,6 +161,7 @@ class WalletDetailAPIView(APIView):
         except Wallet.DoesNotExist:
             return None
 
+    @swagger_auto_schema(tags=["Wallet"], operation_summary="Get wallet by ID")
     def get(self, request, pk):
         wallet = self.get_object(pk)
         if wallet is None:
@@ -165,6 +169,8 @@ class WalletDetailAPIView(APIView):
         return Response(_wallet_to_dict(wallet))
 
     @swagger_auto_schema(
+        tags=["Wallet"],
+        operation_summary="Update wallet (full)",
         request_body=_WALLET_BODY_SCHEMA,
         responses={200: openapi.Response(description="Wallet updated")},
     )
@@ -187,6 +193,8 @@ class WalletDetailAPIView(APIView):
         return Response(_wallet_to_dict(wallet))
 
     @swagger_auto_schema(
+        tags=["Wallet"],
+        operation_summary="Update wallet (partial)",
         request_body=_WALLET_BODY_SCHEMA,
         responses={200: openapi.Response(description="Wallet updated")},
     )
@@ -224,6 +232,7 @@ class TransactionListCreateAPIView(APIView):
     GET: List transactions. POST: Create transaction. Logic in view.
     """
 
+    @swagger_auto_schema(tags=["Transaction"], operation_summary="List transactions")
     def get(self, request):
         transactions = (
             Transaction.objects.filter(is_active=True)
@@ -234,6 +243,8 @@ class TransactionListCreateAPIView(APIView):
         return Response(payload)
 
     @swagger_auto_schema(
+        tags=["Transaction"],
+        operation_summary="Create transaction",
         request_body=_TRANSACTION_BODY_SCHEMA,
         responses={201: openapi.Response(description="Transaction created")},
     )
@@ -276,6 +287,7 @@ class TransactionDetailAPIView(APIView):
         except Transaction.DoesNotExist:
             return None
 
+    @swagger_auto_schema(tags=["Transaction"], operation_summary="Get transaction by ID")
     def get(self, request, pk):
         transaction = self.get_object(pk)
         if transaction is None:
@@ -283,6 +295,8 @@ class TransactionDetailAPIView(APIView):
         return Response(_transaction_to_dict(transaction))
 
     @swagger_auto_schema(
+        tags=["Transaction"],
+        operation_summary="Update transaction (full)",
         request_body=_TRANSACTION_BODY_SCHEMA,
         responses={200: openapi.Response(description="Transaction updated")},
     )
@@ -302,6 +316,8 @@ class TransactionDetailAPIView(APIView):
         return Response(_transaction_to_dict(transaction))
 
     @swagger_auto_schema(
+        tags=["Transaction"],
+        operation_summary="Update transaction (partial)",
         request_body=_TRANSACTION_BODY_SCHEMA,
         responses={200: openapi.Response(description="Transaction updated")},
     )

@@ -6,6 +6,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 from .models import Account
+from .tokens import generate_tokens_for_account, decode_refresh_token, decode_access_token
 from wallet.models import Wallet
 from wallet.views import _wallet_to_dict, _transaction_to_dict
 
@@ -82,14 +83,18 @@ class AccountListCreateAPIView(APIView):
     POST: Create account. Validation and create done in view.
     """
 
+    @swagger_auto_schema(tags=["Account"], operation_summary="List accounts")
     def get(self, request):
         accounts = Account.objects.filter(is_active=True).order_by("-created_at")
         payload = [_account_to_dict(a) for a in accounts]
         return Response(payload)
 
     @swagger_auto_schema(
+        tags=["Account"],
+        operation_summary="Create account",
+        operation_description="Creates a new account. Response includes **access_token** and **refresh_token**.",
         request_body=_ACCOUNT_BODY_SCHEMA,
-        responses={201: openapi.Response(description="Account created")},
+        responses={201: openapi.Response(description="Account created; includes access_token and refresh_token")},
     )
     def post(self, request):
         data = request.data
@@ -109,7 +114,11 @@ class AccountListCreateAPIView(APIView):
         if data.get("profile_photo"):
             account.profile_photo = data["profile_photo"]
             account.save(update_fields=["profile_photo"])
-        return Response(_account_to_dict(account), status=status.HTTP_201_CREATED)
+        payload = _account_to_dict(account)
+        tokens = generate_tokens_for_account(account)
+        payload["access_token"] = tokens["access_token"]
+        payload["refresh_token"] = tokens["refresh_token"]
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
 class AccountDetailAPIView(APIView):
@@ -123,6 +132,7 @@ class AccountDetailAPIView(APIView):
         except Account.DoesNotExist:
             return None
 
+    @swagger_auto_schema(tags=["Account"], operation_summary="Get account by ID")
     def get(self, request, pk):
         account = self.get_object(pk)
         if account is None:
@@ -130,6 +140,8 @@ class AccountDetailAPIView(APIView):
         return Response(_account_to_dict(account))
 
     @swagger_auto_schema(
+        tags=["Account"],
+        operation_summary="Update account (full)",
         request_body=_ACCOUNT_BODY_SCHEMA,
         responses={200: openapi.Response(description="Account updated")},
     )
@@ -154,6 +166,8 @@ class AccountDetailAPIView(APIView):
         return Response(_account_to_dict(account))
 
     @swagger_auto_schema(
+        tags=["Account"],
+        operation_summary="Update account (partial)",
         request_body=_ACCOUNT_BODY_SCHEMA,
         responses={200: openapi.Response(description="Account updated")},
     )
@@ -194,22 +208,85 @@ class AccountDetailAPIView(APIView):
 
 
 class AccountExistsView(APIView):
+    """
+    GET ?email=... — Returns exists (true/false). When exists=true, also returns access_token and refresh_token.
+    """
 
+    @swagger_auto_schema(
+        tags=["Account"],
+        operation_summary="Check if account exists by email",
+        operation_description="Returns **exists** (true/false). When **exists=true**, also returns **access_token** and **refresh_token**.",
+        manual_parameters=[
+            openapi.Parameter("email", openapi.IN_QUERY, type=openapi.TYPE_STRING, required=True, description="Account email"),
+        ],
+        responses={
+            200: openapi.Response(
+                description="exists=true returns access_token and refresh_token; exists=false does not",
+            ),
+        },
+    )
     def get(self, request):
-        email = request.query_params.get("email")
+        email = (request.query_params.get("email") or "").strip()
 
         if not email:
             return Response(
                 {"detail": "email is required"},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-        exists = Account.objects.filter(email=email).exists()
+        account = Account.objects.filter(email=email, is_active=True).first()
+        exists = account is not None
 
-        return Response(
-            {"exists": exists},
-            status=status.HTTP_200_OK
-        )
+        payload = {"exists": exists}
+        if exists:
+            tokens = generate_tokens_for_account(account)
+            payload["access_token"] = tokens["access_token"]
+            payload["refresh_token"] = tokens["refresh_token"]
+
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class TokenRefreshAPIView(APIView):
+    """
+    POST with body {"refresh_token": "..."}. Returns new access_token and refresh_token.
+    """
+
+    @swagger_auto_schema(
+        tags=["Account"],
+        operation_summary="Refresh tokens",
+        operation_description="Send **refresh_token** in body. Returns new **access_token** and **refresh_token**.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=["refresh_token"],
+            properties={"refresh_token": openapi.Schema(type=openapi.TYPE_STRING, description="Your refresh token")},
+        ),
+        responses={
+            200: openapi.Response(description="New access_token and refresh_token"),
+            401: openapi.Response(description="Invalid or expired refresh token"),
+        },
+    )
+    def post(self, request):
+        refresh_token = (request.data.get("refresh_token") or "").strip()
+        if not refresh_token:
+            return Response(
+                {"detail": "refresh_token is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        account_id = decode_refresh_token(refresh_token)
+        if not account_id:
+            return Response(
+                {"detail": "Invalid or expired refresh token"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        try:
+            account = Account.objects.get(pk=account_id, is_active=True)
+        except Account.DoesNotExist:
+            return Response(
+                {"detail": "Invalid or expired refresh token"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        tokens = generate_tokens_for_account(account)
+        return Response(tokens, status=status.HTTP_200_OK)
 
 
 class AccountDetailByEmailAPIView(APIView):
@@ -219,6 +296,9 @@ class AccountDetailByEmailAPIView(APIView):
     """
 
     @swagger_auto_schema(
+        tags=["Account"],
+        operation_summary="Get account details by email",
+        operation_description="Pass **email** as query param. Returns account, wallet and transactions for that email.",
         manual_parameters=[
             openapi.Parameter("email", openapi.IN_QUERY, type=openapi.TYPE_STRING, required=True, description="Account email"),
         ],
@@ -251,6 +331,73 @@ class AccountDetailByEmailAPIView(APIView):
 
         wallet = Wallet.objects.filter(account=account, is_active=True).first()
 
+        transactions = []
+        if wallet:
+            transactions = list(
+                wallet.transactions.filter(is_active=True).order_by("-created_at")
+            )
+            transactions = [_transaction_to_dict(t) for t in transactions]
+
+        payload = {
+            "account": _account_to_dict(account),
+            "wallet": _wallet_to_dict(wallet) if wallet else None,
+            "transactions": transactions,
+        }
+        return Response(payload)
+
+
+def _get_account_from_bearer_token(request):
+    """Return Account if valid Bearer access_token in Authorization header, else None."""
+    auth = request.META.get("HTTP_AUTHORIZATION") or ""
+    if not auth.startswith("Bearer "):
+        return None
+    token = auth[7:].strip()
+    if not token:
+        return None
+    account_id = decode_access_token(token)
+    if not account_id:
+        return None
+    try:
+        return Account.objects.get(pk=account_id, is_active=True)
+    except Account.DoesNotExist:
+        return None
+
+
+class AccountMeAPIView(APIView):
+    """
+    GET: Requires Authorization: Bearer <access_token>.
+    Returns full details for the logged-in account: account, wallet, transactions.
+    """
+
+    @swagger_auto_schema(
+        tags=["Account"],
+        operation_summary="Get my details (requires Bearer token)",
+        operation_description="Use **Authorize** and enter `Bearer &lt;your_access_token&gt;`. Returns full account, wallet and transactions for the logged-in account.",
+        security=[{"Bearer": []}],
+        responses={
+            200: openapi.Response(
+                description="Account with wallet and transactions",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "account": openapi.Schema(type=openapi.TYPE_OBJECT),
+                        "wallet": openapi.Schema(type=openapi.TYPE_OBJECT, nullable=True),
+                        "transactions": openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
+                    },
+                ),
+            ),
+            401: openapi.Response(description="Missing or invalid access token"),
+        },
+    )
+    def get(self, request):
+        account = _get_account_from_bearer_token(request)
+        if not account:
+            return Response(
+                {"detail": "Missing or invalid access token."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        wallet = Wallet.objects.filter(account=account, is_active=True).first()
         transactions = []
         if wallet:
             transactions = list(

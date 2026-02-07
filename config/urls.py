@@ -26,7 +26,7 @@ schema_view = get_schema_view(
     openapi.Info(
         title="TopUpGo API",
         default_version="v1",
-        description="Account, Wallet & Transaction APIs",
+        description="Account, Wallet & Transaction APIs. Use **Authorize** to set Bearer token for protected endpoints (e.g. GET /api/account/me/).",
         terms_of_service="",
         contact=openapi.Contact(email=""),
         license=openapi.License(name=""),

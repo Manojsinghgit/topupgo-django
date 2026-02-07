@@ -42,6 +42,11 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:8000",
 ]
 
+# JWT (access + refresh) for Account auth
+JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", SECRET_KEY)
+JWT_ACCESS_TOKEN_LIFETIME_MINUTES = int(os.environ.get("JWT_ACCESS_TOKEN_LIFETIME_MINUTES", "60"))
+JWT_REFRESH_TOKEN_LIFETIME_DAYS = int(os.environ.get("JWT_REFRESH_TOKEN_LIFETIME_DAYS", "7"))
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -189,7 +194,18 @@ REST_FRAMEWORK = {
 #
 
 
-##
-#
-
+# Swagger / drf-yasg
+SWAGGER_SETTINGS = {
+    "SECURITY_DEFINITIONS": {
+        "Bearer": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header",
+            "description": "JWT access token. Enter: Bearer &lt;your_access_token&gt;",
+        }
+    },
+    "USE_SESSION_AUTH": False,
+    "PERSIST_AUTH": True,
+    "DOC_EXPANSION": "list",
+}
 

@@ -19,4 +19,9 @@ urlpatterns = [
         views.AccountExistsView.as_view(),
         name="account-exists"
     ),
+    path(
+        "account-detail-by-email/",
+        views.AccountDetailByEmailAPIView.as_view(),
+        name="account-detail-by-email"
+    ),
 ]

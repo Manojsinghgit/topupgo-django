@@ -31,6 +31,16 @@ DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
 
+# CSRF: allow API domain and common frontend origins (required when request Origin is set)
+CSRF_TRUSTED_ORIGINS = [
+    "https://api.topupgo.org",
+    "https://topupgo.org",
+    "https://www.topupgo.org",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
 
 # Application definition
 

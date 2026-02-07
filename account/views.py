@@ -6,6 +6,8 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 from .models import Account
+from wallet.models import Wallet
+from wallet.views import _wallet_to_dict, _transaction_to_dict
 
 
 def _account_to_dict(account):
@@ -208,3 +210,57 @@ class AccountExistsView(APIView):
             {"exists": exists},
             status=status.HTTP_200_OK
         )
+
+
+class AccountDetailByEmailAPIView(APIView):
+    """
+    GET: Pass email as query param (?email=user@example.com).
+    Returns that account's detail, wallet detail (if any), and all transactions for that wallet.
+    """
+
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter("email", openapi.IN_QUERY, type=openapi.TYPE_STRING, required=True, description="Account email"),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Account with wallet and transactions",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "account": openapi.Schema(type=openapi.TYPE_OBJECT),
+                        "wallet": openapi.Schema(type=openapi.TYPE_OBJECT, nullable=True),
+                        "transactions": openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
+                    },
+                ),
+            ),
+            404: openapi.Response(description="Account not found"),
+        },
+    )
+    def get(self, request):
+        email = (request.query_params.get("email") or "").strip()
+        if not email:
+            return Response(
+                {"detail": "email is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            account = Account.objects.get(email=email, is_active=True)
+        except Account.DoesNotExist:
+            return Response({"detail": "Account not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        wallet = Wallet.objects.filter(account=account, is_active=True).first()
+
+        transactions = []
+        if wallet:
+            transactions = list(
+                wallet.transactions.filter(is_active=True).order_by("-created_at")
+            )
+            transactions = [_transaction_to_dict(t) for t in transactions]
+
+        payload = {
+            "account": _account_to_dict(account),
+            "wallet": _wallet_to_dict(wallet) if wallet else None,
+            "transactions": transactions,
+        }
+        return Response(payload)

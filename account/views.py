@@ -160,3 +160,4 @@ class AccountDetailAPIView(APIView):
         account.is_active = False
         account.save(update_fields=["is_active"])
         return Response(status=status.HTTP_204_NO_CONTENT)
+

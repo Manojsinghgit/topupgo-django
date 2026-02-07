@@ -190,3 +190,21 @@ class AccountDetailAPIView(APIView):
         account.save(update_fields=["is_active"])
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+
+class AccountExistsView(APIView):
+
+    def get(self, request):
+        email = request.query_params.get("email")
+
+        if not email:
+            return Response(
+                {"detail": "email is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        exists = Account.objects.filter(email=email).exists()
+
+        return Response(
+            {"exists": exists},
+            status=status.HTTP_200_OK
+        )

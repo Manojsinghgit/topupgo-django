@@ -9,6 +9,13 @@ from drf_yasg import openapi
 from account.models import Account
 from .models import Transaction, Wallet
 
+
+def _get_account_from_request(request):
+    """Get Account from request only if JWT auth set it (not AnonymousUser)."""
+    user = getattr(request, "user", None)
+    return user if isinstance(user, Account) else None
+
+
 # OpenAPI request body schemas — account/wallet from token, not body
 _WALLET_BODY_SCHEMA = openapi.Schema(
     type=openapi.TYPE_OBJECT,
@@ -109,7 +116,7 @@ class WalletListCreateAPIView(APIView):
 
     @swagger_auto_schema(tags=["Wallet"], operation_summary="List wallets (current user only)")
     def get(self, request):
-        account = getattr(request, "user", None)
+        account = _get_account_from_request(request)
         if not account:
             return Response({"detail": "Authentication required."}, status=status.HTTP_401_UNAUTHORIZED)
         wallets = (
@@ -132,7 +139,7 @@ class WalletListCreateAPIView(APIView):
         },
     )
     def post(self, request):
-        account = getattr(request, "user", None)
+        account = _get_account_from_request(request)
         if not account:
             return Response({"detail": "Authentication required."}, status=status.HTTP_401_UNAUTHORIZED)
         data = request.data
@@ -155,7 +162,7 @@ class WalletDetailAPIView(APIView):
     """
 
     def get_object(self, request, pk):
-        account = getattr(request, "user", None)
+        account = _get_account_from_request(request)
         if not account:
             return None
         try:
@@ -236,7 +243,7 @@ class TransactionListCreateAPIView(APIView):
 
     @swagger_auto_schema(tags=["Transaction"], operation_summary="List transactions (current user only)")
     def get(self, request):
-        account = getattr(request, "user", None)
+        account = _get_account_from_request(request)
         if not account:
             return Response({"detail": "Authentication required."}, status=status.HTTP_401_UNAUTHORIZED)
         transactions = (
@@ -260,7 +267,7 @@ class TransactionListCreateAPIView(APIView):
         },
     )
     def post(self, request):
-        account = getattr(request, "user", None)
+        account = _get_account_from_request(request)
         if not account:
             return Response({"detail": "Authentication required."}, status=status.HTTP_401_UNAUTHORIZED)
         wallet = Wallet.objects.filter(account=account, is_active=True).first()
@@ -297,7 +304,7 @@ class TransactionDetailAPIView(APIView):
     """
 
     def get_object(self, request, pk):
-        account = getattr(request, "user", None)
+        account = _get_account_from_request(request)
         if not account:
             return None
         try:

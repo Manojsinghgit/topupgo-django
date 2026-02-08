@@ -12,6 +12,12 @@ from wallet.models import Wallet
 from wallet.views import _wallet_to_dict, _transaction_to_dict
 
 
+def _get_account_from_request(request):
+    """Get Account from request only if JWT auth set it (not AnonymousUser)."""
+    user = getattr(request, "user", None)
+    return user if isinstance(user, Account) else None
+
+
 def _account_to_dict(account):
     """Build response dict from Account instance. No serializer."""
     return {
@@ -86,8 +92,7 @@ class AccountListCreateAPIView(APIView):
 
     @swagger_auto_schema(tags=["Account"], operation_summary="List accounts (current user only)")
     def get(self, request):
-        # Token required; return only current account
-        account = getattr(request, "user", None)
+        account = _get_account_from_request(request)
         if not account:
             return Response({"detail": "Authentication required."}, status=status.HTTP_401_UNAUTHORIZED)
         payload = [_account_to_dict(account)]
@@ -137,7 +142,7 @@ class AccountDetailAPIView(APIView):
     """
 
     def get_object(self, request, pk):
-        account = getattr(request, "user", None)
+        account = _get_account_from_request(request)
         if not account or account.pk != pk:
             return None
         return account
@@ -334,8 +339,7 @@ class AccountDetailByEmailAPIView(APIView):
                 {"detail": "email is required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        # Only allow own account (token)
-        account = getattr(request, "user", None)
+        account = _get_account_from_request(request)
         if not account or account.email != email:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -382,7 +386,7 @@ class AccountMeAPIView(APIView):
         },
     )
     def get(self, request):
-        account = getattr(request, "user", None)
+        account = _get_account_from_request(request)
         if not account:
             return Response(
                 {"detail": "Authentication required."},

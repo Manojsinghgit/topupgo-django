@@ -1,4 +1,5 @@
 from decimal import Decimal
+from django.db import IntegrityError
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -105,15 +106,21 @@ class AccountListCreateAPIView(APIView):
         if not is_valid:
             return Response(result, status=status.HTTP_400_BAD_REQUEST)
         data = result
-        account = Account.objects.create(
-            email=(data.get("email") or "").strip(),
-            username=(data.get("username") or "").strip(),
-            phone_no=(data.get("phone_no") or "").strip() or "",
-            first_name=(data.get("first_name") or "").strip() or "",
-            last_name=(data.get("last_name") or "").strip() or "",
-            date_of_birth=data.get("date_of_birth") or None,
-            is_verified=bool(data.get("is_verified", False)),
-        )
+        try:
+            account = Account.objects.create(
+                email=(data.get("email") or "").strip(),
+                username=(data.get("username") or "").strip(),
+                phone_no=(data.get("phone_no") or "").strip() or "",
+                first_name=(data.get("first_name") or "").strip() or "",
+                last_name=(data.get("last_name") or "").strip() or "",
+                date_of_birth=data.get("date_of_birth") or None,
+                is_verified=bool(data.get("is_verified", False)),
+            )
+        except IntegrityError:
+            return Response(
+                {"detail": "Account with this email or username already exists."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if data.get("profile_photo"):
             account.profile_photo = data["profile_photo"]
             account.save(update_fields=["profile_photo"])

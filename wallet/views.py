@@ -9,23 +9,22 @@ from drf_yasg import openapi
 from account.models import Account
 from .models import Transaction, Wallet
 
-# OpenAPI request body schemas for Swagger UI
+# OpenAPI request body schemas — account/wallet from token, not body
 _WALLET_BODY_SCHEMA = openapi.Schema(
     type=openapi.TYPE_OBJECT,
-    required=["account", "address"],
+    required=["address"],
     properties={
-        "account": openapi.Schema(type=openapi.TYPE_INTEGER, description="Account ID"),
         "address": openapi.Schema(type=openapi.TYPE_STRING, description="Wallet address (unique)"),
         "wallet_type": openapi.Schema(type=openapi.TYPE_STRING, description="e.g. metamask, trust"),
         "balance": openapi.Schema(type=openapi.TYPE_NUMBER, description="Initial balance", default=0),
     },
+    description="Account is taken from your access token; do not send account_id.",
 )
 _TRANSACTION_BODY_SCHEMA = openapi.Schema(
     type=openapi.TYPE_OBJECT,
-    required=["transaction_id", "wallet", "amount", "final_amount", "transaction_type"],
+    required=["transaction_id", "amount", "final_amount", "transaction_type"],
     properties={
         "transaction_id": openapi.Schema(type=openapi.TYPE_STRING, description="Unique transaction id"),
-        "wallet": openapi.Schema(type=openapi.TYPE_INTEGER, description="Wallet ID"),
         "amount": openapi.Schema(type=openapi.TYPE_NUMBER),
         "fee": openapi.Schema(type=openapi.TYPE_NUMBER, default=0),
         "final_amount": openapi.Schema(type=openapi.TYPE_NUMBER),
@@ -34,6 +33,7 @@ _TRANSACTION_BODY_SCHEMA = openapi.Schema(
         "description": openapi.Schema(type=openapi.TYPE_STRING),
         "metadata": openapi.Schema(type=openapi.TYPE_OBJECT, description="Optional JSON object"),
     },
+    description="Wallet is taken from your access token (your account's wallet); do not send wallet_id.",
 )
 
 
@@ -70,15 +70,9 @@ def _transaction_to_dict(txn):
 
 
 def _validate_wallet_create(data):
-    """Validate wallet POST in view."""
+    """Validate wallet POST. Account comes from token, not body."""
     errors = {}
-    account_id = data.get("account")
     address = (data.get("address") or "").strip()
-    if not account_id:
-        errors["account"] = ["This field is required."]
-    else:
-        if not Account.objects.filter(pk=account_id, is_active=True).exists():
-            errors["account"] = ["Valid account id required."]
     if not address:
         errors["address"] = ["This field is required."]
     if address and Wallet.objects.filter(address=address).exists():
@@ -89,15 +83,10 @@ def _validate_wallet_create(data):
 
 
 def _validate_transaction_create(data):
-    """Validate transaction POST in view."""
+    """Validate transaction POST. Wallet comes from token (account's wallet), not body."""
     errors = {}
     if not (data.get("transaction_id") or "").strip():
         errors["transaction_id"] = ["This field is required."]
-    if data.get("wallet") is None:
-        errors["wallet"] = ["This field is required."]
-    else:
-        if not Wallet.objects.filter(pk=data["wallet"], is_active=True).exists():
-            errors["wallet"] = ["Valid wallet id required."]
     if data.get("amount") is None:
         errors["amount"] = ["This field is required."]
     if data.get("final_amount") is None:
@@ -134,7 +123,7 @@ class WalletListCreateAPIView(APIView):
     @swagger_auto_schema(
         tags=["Wallet"],
         operation_summary="Create wallet (Bearer token required)",
-        operation_description="Requires **Authorization: Bearer &lt;access_token&gt;**. You can only create a wallet for your own account (body.account must be your account id).",
+        operation_description="Requires **Authorization: Bearer &lt;access_token&gt;**. Account is taken from your token automatically; send only address, wallet_type, balance.",
         security=[{"Bearer": []}],
         request_body=_WALLET_BODY_SCHEMA,
         responses={
@@ -151,8 +140,6 @@ class WalletListCreateAPIView(APIView):
         if not is_valid:
             return Response(result, status=status.HTTP_400_BAD_REQUEST)
         data = result
-        if data.get("account") != account.id:
-            return Response({"account": ["You can only create a wallet for your own account."]}, status=status.HTTP_403_FORBIDDEN)
         wallet = Wallet.objects.create(
             account=account,
             address=(data.get("address") or "").strip().replace(" ", ""),
@@ -262,23 +249,31 @@ class TransactionListCreateAPIView(APIView):
 
     @swagger_auto_schema(
         tags=["Transaction"],
-        operation_summary="Create transaction",
+        operation_summary="Create transaction (Bearer token required)",
+        operation_description="Requires **Authorization: Bearer &lt;access_token&gt;**. Wallet is taken from your token (your account's wallet) automatically; do not send wallet_id.",
+        security=[{"Bearer": []}],
         request_body=_TRANSACTION_BODY_SCHEMA,
-        responses={201: openapi.Response(description="Transaction created")},
+        responses={
+            201: openapi.Response(description="Transaction created"),
+            401: openapi.Response(description="Missing or invalid access token"),
+            400: openapi.Response(description="Create a wallet first if you have none"),
+        },
     )
     def post(self, request):
         account = getattr(request, "user", None)
         if not account:
             return Response({"detail": "Authentication required."}, status=status.HTTP_401_UNAUTHORIZED)
+        wallet = Wallet.objects.filter(account=account, is_active=True).first()
+        if not wallet:
+            return Response(
+                {"detail": "Create a wallet first. You have no wallet linked to your account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         data = request.data
         is_valid, result = _validate_transaction_create(data)
         if not is_valid:
             return Response(result, status=status.HTTP_400_BAD_REQUEST)
         data = result
-        try:
-            wallet = Wallet.objects.get(pk=data["wallet"], account=account, is_active=True)
-        except Wallet.DoesNotExist:
-            return Response({"wallet": ["Wallet not found or access denied."]}, status=status.HTTP_403_FORBIDDEN)
         amount = Decimal(str(data["amount"]))
         fee = Decimal(str(data.get("fee", 0)))
         final_amount = Decimal(str(data["final_amount"]))

@@ -6,7 +6,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 from .models import Account
-from .tokens import generate_tokens_for_account, decode_refresh_token, decode_access_token
+from .tokens import generate_tokens_for_account, decode_refresh_token
 from wallet.models import Wallet
 from wallet.views import _wallet_to_dict, _transaction_to_dict
 
@@ -83,10 +83,13 @@ class AccountListCreateAPIView(APIView):
     POST: Create account. Validation and create done in view.
     """
 
-    @swagger_auto_schema(tags=["Account"], operation_summary="List accounts")
+    @swagger_auto_schema(tags=["Account"], operation_summary="List accounts (current user only)")
     def get(self, request):
-        accounts = Account.objects.filter(is_active=True).order_by("-created_at")
-        payload = [_account_to_dict(a) for a in accounts]
+        # Token required; return only current account
+        account = getattr(request, "user", None)
+        if not account:
+            return Response({"detail": "Authentication required."}, status=status.HTTP_401_UNAUTHORIZED)
+        payload = [_account_to_dict(account)]
         return Response(payload)
 
     @swagger_auto_schema(
@@ -123,18 +126,18 @@ class AccountListCreateAPIView(APIView):
 
 class AccountDetailAPIView(APIView):
     """
-    GET / PUT / PATCH / DELETE account. Logic in view.
+    GET / PUT / PATCH / DELETE account. Only own account (token) allowed.
     """
 
-    def get_object(self, pk):
-        try:
-            return Account.objects.get(pk=pk, is_active=True)
-        except Account.DoesNotExist:
+    def get_object(self, request, pk):
+        account = getattr(request, "user", None)
+        if not account or account.pk != pk:
             return None
+        return account
 
-    @swagger_auto_schema(tags=["Account"], operation_summary="Get account by ID")
+    @swagger_auto_schema(tags=["Account"], operation_summary="Get account by ID (own only)")
     def get(self, request, pk):
-        account = self.get_object(pk)
+        account = self.get_object(request, pk)
         if account is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(_account_to_dict(account))
@@ -146,7 +149,7 @@ class AccountDetailAPIView(APIView):
         responses={200: openapi.Response(description="Account updated")},
     )
     def put(self, request, pk):
-        account = self.get_object(pk)
+        account = self.get_object(request, pk)
         if account is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         is_valid, result = _validate_account_update(request.data, account)
@@ -172,7 +175,7 @@ class AccountDetailAPIView(APIView):
         responses={200: openapi.Response(description="Account updated")},
     )
     def patch(self, request, pk):
-        account = self.get_object(pk)
+        account = self.get_object(request, pk)
         if account is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         is_valid, result = _validate_account_update(request.data, account)
@@ -199,7 +202,7 @@ class AccountDetailAPIView(APIView):
         return Response(_account_to_dict(account))
 
     def delete(self, request, pk):
-        account = self.get_object(pk)
+        account = self.get_object(request, pk)
         if account is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         account.is_active = False
@@ -324,10 +327,10 @@ class AccountDetailByEmailAPIView(APIView):
                 {"detail": "email is required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        try:
-            account = Account.objects.get(email=email, is_active=True)
-        except Account.DoesNotExist:
-            return Response({"detail": "Account not found."}, status=status.HTTP_404_NOT_FOUND)
+        # Only allow own account (token)
+        account = getattr(request, "user", None)
+        if not account or account.email != email:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
         wallet = Wallet.objects.filter(account=account, is_active=True).first()
 
@@ -346,33 +349,15 @@ class AccountDetailByEmailAPIView(APIView):
         return Response(payload)
 
 
-def _get_account_from_bearer_token(request):
-    """Return Account if valid Bearer access_token in Authorization header, else None."""
-    auth = request.META.get("HTTP_AUTHORIZATION") or ""
-    if not auth.startswith("Bearer "):
-        return None
-    token = auth[7:].strip()
-    if not token:
-        return None
-    account_id = decode_access_token(token)
-    if not account_id:
-        return None
-    try:
-        return Account.objects.get(pk=account_id, is_active=True)
-    except Account.DoesNotExist:
-        return None
-
-
 class AccountMeAPIView(APIView):
     """
-    GET: Requires Authorization: Bearer <access_token>.
-    Returns full details for the logged-in account: account, wallet, transactions.
+    GET: Returns full details for the logged-in account (token): account, wallet, transactions.
     """
 
     @swagger_auto_schema(
         tags=["Account"],
         operation_summary="Get my details (requires Bearer token)",
-        operation_description="Use **Authorize** and enter `Bearer &lt;your_access_token&gt;`. Returns full account, wallet and transactions for the logged-in account.",
+        operation_description="Returns full account, wallet and transactions for the logged-in account.",
         security=[{"Bearer": []}],
         responses={
             200: openapi.Response(
@@ -390,10 +375,10 @@ class AccountMeAPIView(APIView):
         },
     )
     def get(self, request):
-        account = _get_account_from_bearer_token(request)
+        account = getattr(request, "user", None)
         if not account:
             return Response(
-                {"detail": "Missing or invalid access token."},
+                {"detail": "Authentication required."},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 

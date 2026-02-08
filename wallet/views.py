@@ -118,10 +118,13 @@ class WalletListCreateAPIView(APIView):
     GET: List wallets. POST: Create wallet. All logic in view.
     """
 
-    @swagger_auto_schema(tags=["Wallet"], operation_summary="List wallets")
+    @swagger_auto_schema(tags=["Wallet"], operation_summary="List wallets (current user only)")
     def get(self, request):
+        account = getattr(request, "user", None)
+        if not account:
+            return Response({"detail": "Authentication required."}, status=status.HTTP_401_UNAUTHORIZED)
         wallets = (
-            Wallet.objects.filter(is_active=True)
+            Wallet.objects.filter(account=account, is_active=True)
             .select_related("account")
             .order_by("-created_at")
         )
@@ -130,20 +133,29 @@ class WalletListCreateAPIView(APIView):
 
     @swagger_auto_schema(
         tags=["Wallet"],
-        operation_summary="Create wallet",
+        operation_summary="Create wallet (Bearer token required)",
+        operation_description="Requires **Authorization: Bearer &lt;access_token&gt;**. You can only create a wallet for your own account (body.account must be your account id).",
+        security=[{"Bearer": []}],
         request_body=_WALLET_BODY_SCHEMA,
-        responses={201: openapi.Response(description="Wallet created")},
+        responses={
+            201: openapi.Response(description="Wallet created"),
+            401: openapi.Response(description="Missing or invalid access token"),
+        },
     )
     def post(self, request):
+        account = getattr(request, "user", None)
+        if not account:
+            return Response({"detail": "Authentication required."}, status=status.HTTP_401_UNAUTHORIZED)
         data = request.data
         is_valid, result = _validate_wallet_create(data)
         if not is_valid:
             return Response(result, status=status.HTTP_400_BAD_REQUEST)
         data = result
-        account = Account.objects.get(pk=data["account"])
+        if data.get("account") != account.id:
+            return Response({"account": ["You can only create a wallet for your own account."]}, status=status.HTTP_403_FORBIDDEN)
         wallet = Wallet.objects.create(
             account=account,
-            address=(data.get("address") or "").strip(),
+            address=(data.get("address") or "").strip().replace(" ", ""),
             wallet_type=(data.get("wallet_type") or "").strip() or "",
             balance=Decimal(str(data.get("balance", 0))),
         )
@@ -152,18 +164,21 @@ class WalletListCreateAPIView(APIView):
 
 class WalletDetailAPIView(APIView):
     """
-    GET / PUT / PATCH / DELETE wallet. Logic in view.
+    GET / PUT / PATCH / DELETE wallet. Only own wallet (token) allowed.
     """
 
-    def get_object(self, pk):
+    def get_object(self, request, pk):
+        account = getattr(request, "user", None)
+        if not account:
+            return None
         try:
-            return Wallet.objects.select_related("account").get(pk=pk, is_active=True)
+            return Wallet.objects.select_related("account").get(pk=pk, account=account, is_active=True)
         except Wallet.DoesNotExist:
             return None
 
-    @swagger_auto_schema(tags=["Wallet"], operation_summary="Get wallet by ID")
+    @swagger_auto_schema(tags=["Wallet"], operation_summary="Get wallet by ID (own only)")
     def get(self, request, pk):
-        wallet = self.get_object(pk)
+        wallet = self.get_object(request, pk)
         if wallet is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(_wallet_to_dict(wallet))
@@ -175,7 +190,7 @@ class WalletDetailAPIView(APIView):
         responses={200: openapi.Response(description="Wallet updated")},
     )
     def put(self, request, pk):
-        wallet = self.get_object(pk)
+        wallet = self.get_object(request, pk)
         if wallet is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         data = request.data
@@ -199,7 +214,7 @@ class WalletDetailAPIView(APIView):
         responses={200: openapi.Response(description="Wallet updated")},
     )
     def patch(self, request, pk):
-        wallet = self.get_object(pk)
+        wallet = self.get_object(request, pk)
         if wallet is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         data = request.data
@@ -219,7 +234,7 @@ class WalletDetailAPIView(APIView):
         return Response(_wallet_to_dict(wallet))
 
     def delete(self, request, pk):
-        wallet = self.get_object(pk)
+        wallet = self.get_object(request, pk)
         if wallet is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         wallet.is_active = False
@@ -232,10 +247,13 @@ class TransactionListCreateAPIView(APIView):
     GET: List transactions. POST: Create transaction. Logic in view.
     """
 
-    @swagger_auto_schema(tags=["Transaction"], operation_summary="List transactions")
+    @swagger_auto_schema(tags=["Transaction"], operation_summary="List transactions (current user only)")
     def get(self, request):
+        account = getattr(request, "user", None)
+        if not account:
+            return Response({"detail": "Authentication required."}, status=status.HTTP_401_UNAUTHORIZED)
         transactions = (
-            Transaction.objects.filter(is_active=True)
+            Transaction.objects.filter(wallet__account=account, is_active=True)
             .select_related("wallet", "wallet__account")
             .order_by("-created_at")
         )
@@ -249,12 +267,18 @@ class TransactionListCreateAPIView(APIView):
         responses={201: openapi.Response(description="Transaction created")},
     )
     def post(self, request):
+        account = getattr(request, "user", None)
+        if not account:
+            return Response({"detail": "Authentication required."}, status=status.HTTP_401_UNAUTHORIZED)
         data = request.data
         is_valid, result = _validate_transaction_create(data)
         if not is_valid:
             return Response(result, status=status.HTTP_400_BAD_REQUEST)
         data = result
-        wallet = Wallet.objects.get(pk=data["wallet"])
+        try:
+            wallet = Wallet.objects.get(pk=data["wallet"], account=account, is_active=True)
+        except Wallet.DoesNotExist:
+            return Response({"wallet": ["Wallet not found or access denied."]}, status=status.HTTP_403_FORBIDDEN)
         amount = Decimal(str(data["amount"]))
         fee = Decimal(str(data.get("fee", 0)))
         final_amount = Decimal(str(data["final_amount"]))
@@ -274,22 +298,25 @@ class TransactionListCreateAPIView(APIView):
 
 class TransactionDetailAPIView(APIView):
     """
-    GET / PUT / PATCH / DELETE transaction. Logic in view.
+    GET / PUT / PATCH / DELETE transaction. Only own transactions (token) allowed.
     """
 
-    def get_object(self, pk):
+    def get_object(self, request, pk):
+        account = getattr(request, "user", None)
+        if not account:
+            return None
         try:
             return (
-                Transaction.objects.filter(is_active=True)
+                Transaction.objects.filter(wallet__account=account, is_active=True)
                 .select_related("wallet", "wallet__account")
                 .get(pk=pk)
             )
         except Transaction.DoesNotExist:
             return None
 
-    @swagger_auto_schema(tags=["Transaction"], operation_summary="Get transaction by ID")
+    @swagger_auto_schema(tags=["Transaction"], operation_summary="Get transaction by ID (own only)")
     def get(self, request, pk):
-        transaction = self.get_object(pk)
+        transaction = self.get_object(request, pk)
         if transaction is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(_transaction_to_dict(transaction))
@@ -301,7 +328,7 @@ class TransactionDetailAPIView(APIView):
         responses={200: openapi.Response(description="Transaction updated")},
     )
     def put(self, request, pk):
-        transaction = self.get_object(pk)
+        transaction = self.get_object(request, pk)
         if transaction is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         data = request.data
@@ -322,7 +349,7 @@ class TransactionDetailAPIView(APIView):
         responses={200: openapi.Response(description="Transaction updated")},
     )
     def patch(self, request, pk):
-        transaction = self.get_object(pk)
+        transaction = self.get_object(request, pk)
         if transaction is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         data = request.data
@@ -344,7 +371,7 @@ class TransactionDetailAPIView(APIView):
         return Response(_transaction_to_dict(transaction))
 
     def delete(self, request, pk):
-        transaction = self.get_object(pk)
+        transaction = self.get_object(request, pk)
         if transaction is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         transaction.is_active = False

@@ -242,19 +242,22 @@ class WalletDetailAPIView(APIView):
     GET / PUT / PATCH / DELETE wallet.
     Only own wallet (token-based account) allowed.
     """
-
     def get_object(self, request, pk):
         account = _get_account_from_request(request)
-        if not account:
-            return None
+        print("TOKEN ACCOUNT ID:", account.id if account else None)
+
         try:
-            return Wallet.objects.select_related("account").get(
+            wallet = Wallet.objects.get(
                 pk=pk,
                 account=account,
                 is_active=True
             )
+            print("WALLET ACCOUNT ID:", wallet.account.id)
+            return wallet
         except Wallet.DoesNotExist:
+            print("WALLET NOT FOUND FOR THIS ACCOUNT")
             return None
+
 
     # ===================== GET =====================
 

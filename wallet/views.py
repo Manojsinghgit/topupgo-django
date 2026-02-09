@@ -298,84 +298,247 @@ class TransactionListCreateAPIView(APIView):
         return Response(_transaction_to_dict(txn), status=status.HTTP_201_CREATED)
 
 
+# class TransactionDetailAPIView(APIView):
+#     """
+#     GET / PUT / PATCH / DELETE transaction. Only own transactions (token) allowed.
+#     """
+
+#     def get_object(self, request, pk):
+#         account = _get_account_from_request(request)
+#         if not account:
+#             return None
+#         try:
+#             return (
+#                 Transaction.objects.filter(wallet__account=account, is_active=True)
+#                 .select_related("wallet", "wallet__account")
+#                 .get(pk=pk)
+#             )
+#         except Transaction.DoesNotExist:
+#             return None
+
+#     @swagger_auto_schema(tags=["Transaction"], operation_summary="Get transaction by ID (own only)")
+#     def get(self, request, pk):
+#         transaction = self.get_object(request, pk)
+#         if transaction is None:
+#             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+#         return Response(_transaction_to_dict(transaction))
+
+#     @swagger_auto_schema(
+#         tags=["Transaction"],
+#         operation_summary="Update transaction (full)",
+#         request_body=_TRANSACTION_BODY_SCHEMA,
+#         responses={200: openapi.Response(description="Transaction updated")},
+#     )
+#     def put(self, request, pk):
+#         transaction = self.get_object(request, pk)
+#         if transaction is None:
+#             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+#         data = request.data
+#         transaction.amount = Decimal(str(data.get("amount", transaction.amount)))
+#         transaction.fee = Decimal(str(data.get("fee", transaction.fee)))
+#         transaction.final_amount = Decimal(str(data.get("final_amount", transaction.final_amount)))
+#         transaction.transaction_type = (data.get("transaction_type") or transaction.transaction_type or "").strip()
+#         transaction.status = (data.get("status") or transaction.status or "pending").strip() or "pending"
+#         transaction.description = (data.get("description") if "description" in data else transaction.description) or ""
+#         transaction.metadata = dict(data.get("metadata", transaction.metadata or {}))
+#         transaction.save()
+#         return Response(_transaction_to_dict(transaction))
+
+#     @swagger_auto_schema(
+#         tags=["Transaction"],
+#         operation_summary="Update transaction (partial)",
+#         request_body=_TRANSACTION_BODY_SCHEMA,
+#         responses={200: openapi.Response(description="Transaction updated")},
+#     )
+#     def patch(self, request, pk):
+#         transaction = self.get_object(request, pk)
+#         if transaction is None:
+#             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+#         data = request.data
+#         if "amount" in data:
+#             transaction.amount = Decimal(str(data["amount"]))
+#         if "fee" in data:
+#             transaction.fee = Decimal(str(data["fee"]))
+#         if "final_amount" in data:
+#             transaction.final_amount = Decimal(str(data["final_amount"]))
+#         if "transaction_type" in data and data["transaction_type"] is not None:
+#             transaction.transaction_type = str(data["transaction_type"]).strip()
+#         if "status" in data and data["status"] is not None:
+#             transaction.status = str(data["status"]).strip() or "pending"
+#         if "description" in data:
+#             transaction.description = (data["description"] or "").strip() or ""
+#         if "metadata" in data:
+#             transaction.metadata = dict(data["metadata"] or {})
+#         transaction.save()
+#         return Response(_transaction_to_dict(transaction))
+
+#     def delete(self, request, pk):
+#         transaction = self.get_object(request, pk)
+#         if transaction is None:
+#             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+#         transaction.is_active = False
+#         transaction.save(update_fields=["is_active"])
+#         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+
+
 class TransactionDetailAPIView(APIView):
     """
-    GET / PUT / PATCH / DELETE transaction. Only own transactions (token) allowed.
+    GET / PUT / PATCH / DELETE transaction.
+    Only own account transactions allowed.
     """
 
     def get_object(self, request, pk):
         account = _get_account_from_request(request)
         if not account:
             return None
+
         try:
             return (
-                Transaction.objects.filter(wallet__account=account, is_active=True)
+                Transaction.objects
                 .select_related("wallet", "wallet__account")
-                .get(pk=pk)
+                .get(
+                    pk=pk,
+                    wallet__account=account,
+                    is_active=True
+                )
             )
         except Transaction.DoesNotExist:
             return None
 
-    @swagger_auto_schema(tags=["Transaction"], operation_summary="Get transaction by ID (own only)")
-    def get(self, request, pk):
-        transaction = self.get_object(request, pk)
-        if transaction is None:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        return Response(_transaction_to_dict(transaction))
+    # ===================== GET =====================
 
     @swagger_auto_schema(
         tags=["Transaction"],
-        operation_summary="Update transaction (full)",
-        request_body=_TRANSACTION_BODY_SCHEMA,
-        responses={200: openapi.Response(description="Transaction updated")},
+        operation_summary="Get transaction by ID (own only)",
+        responses={200: openapi.Response(description="Transaction detail")}
+    )
+    def get(self, request, pk):
+        transaction = self.get_object(request, pk)
+        if not transaction:
+            return Response(
+                {"detail": "Transaction not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        return Response(_transaction_to_dict(transaction))
+
+    # ===================== PUT =====================
+
+    @swagger_auto_schema(
+        tags=["Transaction"],
+        operation_summary="Update transaction (full update)",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                "amount": openapi.Schema(type=openapi.TYPE_STRING),
+                "fee": openapi.Schema(type=openapi.TYPE_STRING),
+                "final_amount": openapi.Schema(type=openapi.TYPE_STRING),
+                "transaction_type": openapi.Schema(type=openapi.TYPE_STRING),
+                "status": openapi.Schema(type=openapi.TYPE_STRING),
+                "description": openapi.Schema(type=openapi.TYPE_STRING),
+                "metadata": openapi.Schema(type=openapi.TYPE_OBJECT),
+            },
+            required=["amount", "final_amount"]
+        ),
     )
     def put(self, request, pk):
         transaction = self.get_object(request, pk)
-        if transaction is None:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not transaction:
+            return Response(
+                {"detail": "Transaction not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
         data = request.data
+
         transaction.amount = Decimal(str(data.get("amount", transaction.amount)))
         transaction.fee = Decimal(str(data.get("fee", transaction.fee)))
         transaction.final_amount = Decimal(str(data.get("final_amount", transaction.final_amount)))
-        transaction.transaction_type = (data.get("transaction_type") or transaction.transaction_type or "").strip()
-        transaction.status = (data.get("status") or transaction.status or "pending").strip() or "pending"
-        transaction.description = (data.get("description") if "description" in data else transaction.description) or ""
-        transaction.metadata = dict(data.get("metadata", transaction.metadata or {}))
+        transaction.transaction_type = str(
+            data.get("transaction_type", transaction.transaction_type)
+        ).strip()
+        transaction.status = str(
+            data.get("status", transaction.status)
+        ).strip() or "pending"
+        transaction.description = data.get("description", transaction.description) or ""
+        transaction.metadata = data.get("metadata", transaction.metadata or {})
+
         transaction.save()
+
         return Response(_transaction_to_dict(transaction))
+
+    # ===================== PATCH =====================
 
     @swagger_auto_schema(
         tags=["Transaction"],
-        operation_summary="Update transaction (partial)",
-        request_body=_TRANSACTION_BODY_SCHEMA,
-        responses={200: openapi.Response(description="Transaction updated")},
+        operation_summary="Update transaction (partial update)",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                "amount": openapi.Schema(type=openapi.TYPE_STRING),
+                "fee": openapi.Schema(type=openapi.TYPE_STRING),
+                "final_amount": openapi.Schema(type=openapi.TYPE_STRING),
+                "transaction_type": openapi.Schema(type=openapi.TYPE_STRING),
+                "status": openapi.Schema(type=openapi.TYPE_STRING),
+                "description": openapi.Schema(type=openapi.TYPE_STRING),
+                "metadata": openapi.Schema(type=openapi.TYPE_OBJECT),
+            }
+        ),
     )
     def patch(self, request, pk):
         transaction = self.get_object(request, pk)
-        if transaction is None:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not transaction:
+            return Response(
+                {"detail": "Transaction not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
         data = request.data
+
         if "amount" in data:
             transaction.amount = Decimal(str(data["amount"]))
+
         if "fee" in data:
             transaction.fee = Decimal(str(data["fee"]))
+
         if "final_amount" in data:
             transaction.final_amount = Decimal(str(data["final_amount"]))
-        if "transaction_type" in data and data["transaction_type"] is not None:
+
+        if "transaction_type" in data:
             transaction.transaction_type = str(data["transaction_type"]).strip()
-        if "status" in data and data["status"] is not None:
+
+        if "status" in data:
             transaction.status = str(data["status"]).strip() or "pending"
+
         if "description" in data:
-            transaction.description = (data["description"] or "").strip() or ""
+            transaction.description = data["description"] or ""
+
         if "metadata" in data:
-            transaction.metadata = dict(data["metadata"] or {})
+            transaction.metadata = data["metadata"] or {}
+
         transaction.save()
+
         return Response(_transaction_to_dict(transaction))
 
+    # ===================== DELETE =====================
+
+    @swagger_auto_schema(
+        tags=["Transaction"],
+        operation_summary="Delete transaction (soft delete)"
+    )
     def delete(self, request, pk):
         transaction = self.get_object(request, pk)
-        if transaction is None:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not transaction:
+            return Response(
+                {"detail": "Transaction not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
         transaction.is_active = False
         transaction.save(update_fields=["is_active"])
-        return Response(status=status.HTTP_204_NO_CONTENT)
+
+        return Response(
+            {"detail": "Transaction deleted successfully."},
+            status=status.HTTP_204_NO_CONTENT
+        )

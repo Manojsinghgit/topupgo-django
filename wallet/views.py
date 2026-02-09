@@ -156,9 +156,91 @@ class WalletListCreateAPIView(APIView):
         return Response(_wallet_to_dict(wallet), status=status.HTTP_201_CREATED)
 
 
+# class WalletDetailAPIView(APIView):
+#     """
+#     GET / PUT / PATCH / DELETE wallet. Only own wallet (token) allowed.
+#     """
+
+#     def get_object(self, request, pk):
+#         account = _get_account_from_request(request)
+#         if not account:
+#             return None
+#         try:
+#             return Wallet.objects.select_related("account").get(pk=pk, account=account, is_active=True)
+#         except Wallet.DoesNotExist:
+#             return None
+
+#     @swagger_auto_schema(tags=["Wallet"], operation_summary="Get wallet by ID (own only)")
+#     def get(self, request, pk):
+#         wallet = self.get_object(request, pk)
+#         if wallet is None:
+#             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+#         return Response(_wallet_to_dict(wallet))
+
+#     @swagger_auto_schema(
+#         tags=["Wallet"],
+#         operation_summary="Update wallet (full)",
+#         request_body=_WALLET_BODY_SCHEMA,
+#         responses={200: openapi.Response(description="Wallet updated")},
+#     )
+#     def put(self, request, pk):
+#         wallet = self.get_object(request, pk)
+#         if wallet is None:
+#             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+#         data = request.data
+#         addr = (data.get("address") or wallet.address or "").strip()
+#         if addr != wallet.address and Wallet.objects.filter(address=addr).exists():
+#             return Response(
+#                 {"address": ["Wallet with this address already exists."]},
+#                 status=status.HTTP_400_BAD_REQUEST,
+#             )
+#         wallet.address = addr
+#         wallet.wallet_type = (data.get("wallet_type") if "wallet_type" in data else wallet.wallet_type) or ""
+#         if "balance" in data:
+#             wallet.balance = Decimal(str(data["balance"]))
+#         wallet.save()
+#         return Response(_wallet_to_dict(wallet))
+
+#     @swagger_auto_schema(
+#         tags=["Wallet"],
+#         operation_summary="Update wallet (partial)",
+#         request_body=_WALLET_BODY_SCHEMA,
+#         responses={200: openapi.Response(description="Wallet updated")},
+#     )
+#     def patch(self, request, pk):
+#         wallet = self.get_object(request, pk)
+#         if wallet is None:
+#             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+#         data = request.data
+#         if "address" in data and data["address"] is not None:
+#             addr = str(data["address"]).strip()
+#             if addr != wallet.address and Wallet.objects.filter(address=addr).exists():
+#                 return Response(
+#                     {"address": ["Wallet with this address already exists."]},
+#                     status=status.HTTP_400_BAD_REQUEST,
+#                 )
+#             wallet.address = addr
+#         if "wallet_type" in data:
+#             wallet.wallet_type = (data["wallet_type"] or "").strip() or ""
+#         if "balance" in data:
+#             wallet.balance = Decimal(str(data["balance"]))
+#         wallet.save()
+#         return Response(_wallet_to_dict(wallet))
+
+#     def delete(self, request, pk):
+#         wallet = self.get_object(request, pk)
+#         if wallet is None:
+#             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+#         wallet.is_active = False
+#         wallet.save(update_fields=["is_active"])
+#         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+
 class WalletDetailAPIView(APIView):
     """
-    GET / PUT / PATCH / DELETE wallet. Only own wallet (token) allowed.
+    GET / PUT / PATCH / DELETE wallet.
+    Only own wallet (token-based account) allowed.
     """
 
     def get_object(self, request, pk):
@@ -166,74 +248,117 @@ class WalletDetailAPIView(APIView):
         if not account:
             return None
         try:
-            return Wallet.objects.select_related("account").get(pk=pk, account=account, is_active=True)
+            return Wallet.objects.select_related("account").get(
+                pk=pk,
+                account=account,
+                is_active=True
+            )
         except Wallet.DoesNotExist:
             return None
 
-    @swagger_auto_schema(tags=["Wallet"], operation_summary="Get wallet by ID (own only)")
+    # ===================== GET =====================
+
+    @swagger_auto_schema(
+        tags=["Wallet"],
+        operation_summary="Get wallet by ID (own only)",
+    )
     def get(self, request, pk):
         wallet = self.get_object(request, pk)
-        if wallet is None:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not wallet:
+            return Response(
+                {"detail": "Wallet not found or access denied."},
+                status=status.HTTP_404_NOT_FOUND
+            )
         return Response(_wallet_to_dict(wallet))
+
+    # ===================== PUT =====================
 
     @swagger_auto_schema(
         tags=["Wallet"],
         operation_summary="Update wallet (full)",
         request_body=_WALLET_BODY_SCHEMA,
-        responses={200: openapi.Response(description="Wallet updated")},
     )
     def put(self, request, pk):
         wallet = self.get_object(request, pk)
-        if wallet is None:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        data = request.data
-        addr = (data.get("address") or wallet.address or "").strip()
-        if addr != wallet.address and Wallet.objects.filter(address=addr).exists():
+        if not wallet:
             return Response(
-                {"address": ["Wallet with this address already exists."]},
-                status=status.HTTP_400_BAD_REQUEST,
+                {"detail": "Wallet not found or access denied."},
+                status=status.HTTP_404_NOT_FOUND
             )
-        wallet.address = addr
-        wallet.wallet_type = (data.get("wallet_type") if "wallet_type" in data else wallet.wallet_type) or ""
-        if "balance" in data:
-            wallet.balance = Decimal(str(data["balance"]))
+
+        data = request.data
+
+        # Address update (unique check)
+        addr = (data.get("address") or "").strip()
+        if addr and addr != wallet.address:
+            if Wallet.objects.filter(address=addr).exclude(pk=wallet.pk).exists():
+                return Response(
+                    {"address": ["Wallet with this address already exists."]},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            wallet.address = addr
+
+        # Wallet type
+        wallet.wallet_type = (data.get("wallet_type") or "").strip()
+
+        # ❌ balance update intentionally NOT allowed
+
         wallet.save()
         return Response(_wallet_to_dict(wallet))
+
+    # ===================== PATCH =====================
 
     @swagger_auto_schema(
         tags=["Wallet"],
         operation_summary="Update wallet (partial)",
         request_body=_WALLET_BODY_SCHEMA,
-        responses={200: openapi.Response(description="Wallet updated")},
     )
     def patch(self, request, pk):
         wallet = self.get_object(request, pk)
-        if wallet is None:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not wallet:
+            return Response(
+                {"detail": "Wallet not found or access denied."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
         data = request.data
+
         if "address" in data and data["address"] is not None:
             addr = str(data["address"]).strip()
-            if addr != wallet.address and Wallet.objects.filter(address=addr).exists():
-                return Response(
-                    {"address": ["Wallet with this address already exists."]},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            wallet.address = addr
+            if addr != wallet.address:
+                if Wallet.objects.filter(address=addr).exclude(pk=wallet.pk).exists():
+                    return Response(
+                        {"address": ["Wallet with this address already exists."]},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                wallet.address = addr
+
         if "wallet_type" in data:
-            wallet.wallet_type = (data["wallet_type"] or "").strip() or ""
-        if "balance" in data:
-            wallet.balance = Decimal(str(data["balance"]))
+            wallet.wallet_type = (data["wallet_type"] or "").strip()
+
+        # ❌ balance update intentionally NOT allowed
+
         wallet.save()
         return Response(_wallet_to_dict(wallet))
 
+    # ===================== DELETE =====================
+
+    @swagger_auto_schema(
+        tags=["Wallet"],
+        operation_summary="Delete wallet (soft delete)",
+    )
     def delete(self, request, pk):
         wallet = self.get_object(request, pk)
-        if wallet is None:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not wallet:
+            return Response(
+                {"detail": "Wallet not found or access denied."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
         wallet.is_active = False
         wallet.save(update_fields=["is_active"])
         return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 
 class TransactionListCreateAPIView(APIView):

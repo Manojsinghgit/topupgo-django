@@ -545,9 +545,9 @@ class TransactionDetailAPIView(APIView):
         
         
         
-class WalletMyListAPIView(APIView):
+class WalletMyListAPIViewV1(APIView):
     """
-    Get all wallets of the logged-in user
+    GET /api/v1/wallets/
     """
 
     def get(self, request):
@@ -563,6 +563,33 @@ class WalletMyListAPIView(APIView):
             is_active=True
         ).order_by("-created_at")
 
-        return Response([
-            _wallet_to_dict(wallet) for wallet in wallets
-        ])
+        return Response([_wallet_to_dict(w) for w in wallets])
+
+
+
+class WalletMyDetailAPIViewV1(APIView):
+    """
+    GET /api/v1/wallets/<wallet_id>/
+    """
+
+    def get(self, request, wallet_id):
+        account = _get_account_from_request(request)
+        if not account:
+            return Response(
+                {"detail": "Authentication required."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        try:
+            wallet = Wallet.objects.get(
+                id=wallet_id,
+                account=account,
+                is_active=True
+            )
+        except Wallet.DoesNotExist:
+            return Response(
+                {"detail": "Wallet not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        return Response(_wallet_to_dict(wallet))

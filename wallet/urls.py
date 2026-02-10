@@ -6,7 +6,8 @@ from .views import (
     WalletDetailAPIView,
     WalletListCreateAPIView,
     WalletMyListAPIViewV1,
-    WalletMyDetailAPIViewV1
+    WalletMyDetailAPIViewV1,
+    WalletAddressByUsernameAPIView
 )
 
 app_name = "wallet"
@@ -18,4 +19,5 @@ urlpatterns = [
     path("transactions/<int:pk>/", TransactionDetailAPIView.as_view(), name="transaction-detail"),
     path("v1/wallets/", WalletMyListAPIViewV1.as_view(),name="get-wallet"),
     path("v1/wallets/<int:wallet_id>/", WalletMyDetailAPIViewV1.as_view(), name="get-wallet-detail"),
+    path("wallet-address-by-username/", WalletAddressByUsernameAPIView.as_view(), name="wallet-address-by-username"),
 ]

@@ -638,3 +638,69 @@ class WalletMyDetailAPIViewV1(APIView):
             )
 
         return Response(_wallet_to_dict(wallet))
+
+
+class WalletAddressByUsernameAPIView(APIView):
+    """
+    GET: Get wallet address by username.
+    Query parameter: ?username=<username>
+    """
+
+    @swagger_auto_schema(
+        tags=["Wallet"],
+        operation_summary="Get wallet address by username",
+        manual_parameters=[
+            openapi.Parameter(
+                'username',
+                openapi.IN_QUERY,
+                description="Username to get wallet address for",
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Wallet address found",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'username': openapi.Schema(type=openapi.TYPE_STRING),
+                        'wallet_address': openapi.Schema(type=openapi.TYPE_STRING),
+                        'wallet_type': openapi.Schema(type=openapi.TYPE_STRING),
+                    }
+                )
+            ),
+            404: openapi.Response(description="User or wallet not found"),
+        },
+    )
+    def get(self, request):
+        username = request.query_params.get('username', '').strip()
+        
+        if not username:
+            return Response(
+                {"detail": "Username parameter is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            account = Account.objects.get(username=username, is_active=True)
+        except Account.DoesNotExist:
+            return Response(
+                {"detail": "User not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        try:
+            wallet = Wallet.objects.get(account=account, is_active=True)
+        except Wallet.DoesNotExist:
+            return Response(
+                {"detail": "Wallet not found for this user."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        return Response({
+            "username": account.username,
+            "wallet_address": wallet.address,
+            "wallet_type": wallet.wallet_type or "",
+            "balance": str(wallet.balance),
+        })

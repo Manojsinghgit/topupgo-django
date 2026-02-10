@@ -44,8 +44,9 @@ _TRANSACTION_BODY_SCHEMA = openapi.Schema(
         "sender_email": openapi.Schema(type=openapi.TYPE_STRING, description="Sender email (plain text, not linked)"),
         "receiver_email": openapi.Schema(type=openapi.TYPE_STRING, description="Receiver email (plain text, not linked)"),
         "sender_type": openapi.Schema(type=openapi.TYPE_STRING, description="Sender type: send, receive, etc."),
+        "wallet_address": openapi.Schema(type=openapi.TYPE_STRING, description="Wallet address (required for external users, optional if authenticated)"),
     },
-    description="Wallet is taken from your access token (your account's wallet); do not send wallet_id.",
+    description="If authenticated, wallet is taken from your token. For external users, provide wallet_address.",
 )
 
 
@@ -100,7 +101,7 @@ def _validate_wallet_create(data):
 
 
 def _validate_transaction_create(data):
-    """Validate transaction POST. Wallet comes from token (account's wallet), not body."""
+    """Validate transaction POST data. Checks required fields and duplicate transaction_id."""
     errors = {}
     if not (data.get("transaction_id") or "").strip():
         errors["transaction_id"] = ["This field is required."]
@@ -266,36 +267,65 @@ class TransactionListCreateAPIView(APIView):
 
     @swagger_auto_schema(
         tags=["Transaction"],
-        operation_summary="Create transaction (Bearer token required)",
-        operation_description="Requires **Authorization: Bearer &lt;access_token&gt;**. Wallet is taken from your token (your account's wallet) automatically; do not send wallet_id.",
-        security=[{"Bearer": []}],
+        operation_summary="Create transaction",
+        operation_description="If authenticated, wallet is taken from your token. For external users, provide wallet_address in request body.",
         request_body=_TRANSACTION_BODY_SCHEMA,
         responses={
             201: openapi.Response(description="Transaction created"),
-            401: openapi.Response(description="Missing or invalid access token"),
-            400: openapi.Response(description="Create a wallet first if you have none"),
+            400: openapi.Response(description="Validation error or duplicate transaction"),
+            404: openapi.Response(description="Wallet not found"),
         },
     )
     def post(self, request):
         account = _get_account_from_request(request)
-        if not account:
-            return Response({"detail": "Authentication required."}, status=status.HTTP_401_UNAUTHORIZED)
-        wallet = Wallet.objects.filter(account=account, is_active=True).first()
-        if not wallet:
-            return Response(
-                {"detail": "Create a wallet first. You have no wallet linked to your account."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
         data = request.data
+        
+        # Get wallet - either from authenticated account or from wallet_address
+        wallet = None
+        if account:
+            # Authenticated user - get wallet from account
+            wallet = Wallet.objects.filter(account=account, is_active=True).first()
+            if not wallet:
+                return Response(
+                    {"detail": "Create a wallet first. You have no wallet linked to your account."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            # External user - get wallet by address
+            wallet_address = (data.get("wallet_address") or "").strip()
+            if not wallet_address:
+                return Response(
+                    {"detail": "wallet_address is required for external users."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            wallet = Wallet.objects.filter(address=wallet_address, is_active=True).first()
+            if not wallet:
+                return Response(
+                    {"detail": "Wallet not found with the provided address."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+        
+        # Validate transaction data
         is_valid, result = _validate_transaction_create(data)
         if not is_valid:
             return Response(result, status=status.HTTP_400_BAD_REQUEST)
         data = result
+        
+        # Check for duplicate transaction_id before creating
+        transaction_id = (data.get("transaction_id") or "").strip()
+        if Transaction.objects.filter(transaction_id=transaction_id).exists():
+            existing_txn = Transaction.objects.get(transaction_id=transaction_id)
+            return Response(
+                {"detail": "Transaction with this ID already exists.", "transaction": _transaction_to_dict(existing_txn)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        # Create transaction
         amount = Decimal(str(data["amount"]))
         fee = Decimal(str(data.get("fee", 0)))
         final_amount = Decimal(str(data["final_amount"]))
         txn = Transaction.objects.create(
-            transaction_id=(data.get("transaction_id") or "").strip(),
+            transaction_id=transaction_id,
             wallet=wallet,
             amount=amount,
             fee=fee,

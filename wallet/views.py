@@ -39,6 +39,9 @@ _TRANSACTION_BODY_SCHEMA = openapi.Schema(
         "status": openapi.Schema(type=openapi.TYPE_STRING, description="e.g. pending, completed, failed", default="pending"),
         "description": openapi.Schema(type=openapi.TYPE_STRING),
         "metadata": openapi.Schema(type=openapi.TYPE_OBJECT, description="Optional JSON object"),
+        "sender_name": openapi.Schema(type=openapi.TYPE_STRING, description="Sender name (plain text)"),
+        "receiver_name": openapi.Schema(type=openapi.TYPE_STRING, description="Receiver name (plain text)"),
+        "sender_type": openapi.Schema(type=openapi.TYPE_STRING, description="Sender type: send, receive, etc."),
     },
     description="Wallet is taken from your access token (your account's wallet); do not send wallet_id.",
 )
@@ -71,6 +74,9 @@ def _transaction_to_dict(txn):
         "status": txn.status,
         "description": txn.description or "",
         "metadata": txn.metadata or {},
+        "sender_name": txn.sender_name or "",
+        "receiver_name": txn.receiver_name or "",
+        "sender_type": txn.sender_type or "",
         "created_at": txn.created_at,
         "updated_at": txn.updated_at,
     }
@@ -294,6 +300,9 @@ class TransactionListCreateAPIView(APIView):
             status=(data.get("status") or "pending").strip() or "pending",
             description=(data.get("description") or "").strip() or "",
             metadata=dict(data.get("metadata") or {}),
+            sender_name=(data.get("sender_name") or "").strip(),
+            receiver_name=(data.get("receiver_name") or "").strip(),
+            sender_type=(data.get("sender_type") or "").strip(),
         )
         return Response(_transaction_to_dict(txn), status=status.HTTP_201_CREATED)
 
@@ -438,6 +447,9 @@ class TransactionDetailAPIView(APIView):
                 "status": openapi.Schema(type=openapi.TYPE_STRING),
                 "description": openapi.Schema(type=openapi.TYPE_STRING),
                 "metadata": openapi.Schema(type=openapi.TYPE_OBJECT),
+                "sender_name": openapi.Schema(type=openapi.TYPE_STRING),
+                "receiver_name": openapi.Schema(type=openapi.TYPE_STRING),
+                "sender_type": openapi.Schema(type=openapi.TYPE_STRING),
             },
             required=["amount", "final_amount"]
         ),
@@ -463,6 +475,9 @@ class TransactionDetailAPIView(APIView):
         ).strip() or "pending"
         transaction.description = data.get("description", transaction.description) or ""
         transaction.metadata = data.get("metadata", transaction.metadata or {})
+        transaction.sender_name = (data.get("sender_name", transaction.sender_name) or "").strip()
+        transaction.receiver_name = (data.get("receiver_name", transaction.receiver_name) or "").strip()
+        transaction.sender_type = (data.get("sender_type", transaction.sender_type) or "").strip()
 
         transaction.save()
 
@@ -483,6 +498,9 @@ class TransactionDetailAPIView(APIView):
                 "status": openapi.Schema(type=openapi.TYPE_STRING),
                 "description": openapi.Schema(type=openapi.TYPE_STRING),
                 "metadata": openapi.Schema(type=openapi.TYPE_OBJECT),
+                "sender_name": openapi.Schema(type=openapi.TYPE_STRING),
+                "receiver_name": openapi.Schema(type=openapi.TYPE_STRING),
+                "sender_type": openapi.Schema(type=openapi.TYPE_STRING),
             }
         ),
     )
@@ -516,6 +534,15 @@ class TransactionDetailAPIView(APIView):
 
         if "metadata" in data:
             transaction.metadata = data["metadata"] or {}
+
+        if "sender_name" in data:
+            transaction.sender_name = (data["sender_name"] or "").strip()
+
+        if "receiver_name" in data:
+            transaction.receiver_name = (data["receiver_name"] or "").strip()
+
+        if "sender_type" in data:
+            transaction.sender_type = (data["sender_type"] or "").strip()
 
         transaction.save()
 

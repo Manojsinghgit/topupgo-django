@@ -29,6 +29,9 @@ class Transaction(BaseModel):
     status = models.CharField(max_length=50, default='pending')  # pending, completed, failed
     description = models.TextField(blank=True)
     metadata = models.JSONField(default=dict, blank=True)
+    sender_name = models.CharField(max_length=255, blank=True)  # Sender name (plain text, not linked)
+    receiver_name = models.CharField(max_length=255, blank=True)  # Receiver name (plain text, not linked)
+    sender_type = models.CharField(max_length=50, blank=True)  # send, receive, etc.
 
     class Meta:
         db_table = 'wallet_transaction'

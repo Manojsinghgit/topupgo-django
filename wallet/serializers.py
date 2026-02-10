@@ -34,6 +34,9 @@ class TransactionSerializer(serializers.ModelSerializer):
             'status',
             'description',
             'metadata',
+            'sender_name',
+            'receiver_name',
+            'sender_type',
             'created_at',
             'updated_at',
         ]

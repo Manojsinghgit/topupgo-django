@@ -839,7 +839,7 @@ class TransactionCreateByUsernameAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        receiver_name = f"{account.first_name or ''} {account.last_name or ''}".strip() or account.username
+        receiver_name = account.username
         receiver_email = account.email or ""
 
         txn = Transaction.objects.create(

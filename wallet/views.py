@@ -1,3 +1,4 @@
+import uuid
 from decimal import Decimal
 
 from rest_framework import status
@@ -47,6 +48,27 @@ _TRANSACTION_BODY_SCHEMA = openapi.Schema(
         "wallet_address": openapi.Schema(type=openapi.TYPE_STRING, description="Wallet address (required for external users, optional if authenticated)"),
     },
     description="If authenticated, wallet is taken from your token. For external users, provide wallet_address.",
+)
+
+# No-auth API: save transaction by username; wallet & receiver filled from username
+_TRANSACTION_BY_USERNAME_BODY_SCHEMA = openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    required=["username", "amount"],
+    properties={
+        "username": openapi.Schema(type=openapi.TYPE_STRING, description="Receiver user's username (wallet & receiver details auto-filled)"),
+        "amount": openapi.Schema(type=openapi.TYPE_NUMBER, description="Transaction amount"),
+        "fee": openapi.Schema(type=openapi.TYPE_NUMBER, default=0),
+        "final_amount": openapi.Schema(type=openapi.TYPE_NUMBER, description="Optional; defaults to amount - fee"),
+        "transaction_type": openapi.Schema(type=openapi.TYPE_STRING, description="e.g. credit, debit, transfer", default="credit"),
+        "status": openapi.Schema(type=openapi.TYPE_STRING, default="pending"),
+        "description": openapi.Schema(type=openapi.TYPE_STRING),
+        "metadata": openapi.Schema(type=openapi.TYPE_OBJECT),
+        "sender_name": openapi.Schema(type=openapi.TYPE_STRING),
+        "sender_email": openapi.Schema(type=openapi.TYPE_STRING),
+        "sender_type": openapi.Schema(type=openapi.TYPE_STRING, description="e.g. send, receive"),
+        "transaction_id": openapi.Schema(type=openapi.TYPE_STRING, description="Optional; auto-generated if not sent"),
+    },
+    description="No auth. Username = receiver user. Wallet, receiver_name, receiver_email are set from that user.",
 )
 
 
@@ -115,6 +137,28 @@ def _validate_transaction_create(data):
         return False, errors
     tid = (data.get("transaction_id") or "").strip()
     if Transaction.objects.filter(transaction_id=tid).exists():
+        errors["transaction_id"] = ["Transaction with this id already exists."]
+        return False, errors
+    return True, data
+
+
+def _validate_transaction_by_username(data):
+    """Validate save-transaction-by-username payload. Required: username, amount."""
+    errors = {}
+    if not (data.get("username") or "").strip():
+        errors["username"] = ["This field is required."]
+    if data.get("amount") is None:
+        errors["amount"] = ["This field is required."]
+    try:
+        amount = Decimal(str(data["amount"]))
+        if amount < 0:
+            errors["amount"] = ["Amount must be non-negative."]
+    except Exception:
+        errors["amount"] = ["Enter a valid number."]
+    if errors:
+        return False, errors
+    tid = (data.get("transaction_id") or "").strip()
+    if tid and Transaction.objects.filter(transaction_id=tid).exists():
         errors["transaction_id"] = ["Transaction with this id already exists."]
         return False, errors
     return True, data
@@ -734,3 +778,84 @@ class WalletAddressByUsernameAPIView(APIView):
             "wallet_type": wallet.wallet_type or "",
             "balance": str(wallet.balance),
         })
+
+
+class TransactionCreateByUsernameAPIView(APIView):
+    """
+    POST: Save transaction by username. No auth.
+    Username = receiver user. Wallet, receiver_name, receiver_email auto-filled from that user.
+    """
+
+    @swagger_auto_schema(
+        tags=["Transaction"],
+        operation_summary="Save transaction by username (no auth)",
+        operation_description="No auth token. Send username + amount + sender details. Wallet, receiver_name, receiver_email are filled from the user's account.",
+        request_body=_TRANSACTION_BY_USERNAME_BODY_SCHEMA,
+        responses={
+            201: openapi.Response(description="Transaction created"),
+            400: openapi.Response(description="Validation error"),
+            404: openapi.Response(description="User or wallet not found"),
+        },
+    )
+    def post(self, request):
+        data = request.data
+        is_valid, result = _validate_transaction_by_username(data)
+        if not is_valid:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        data = result
+
+        username = (data.get("username") or "").strip()
+        try:
+            account = Account.objects.get(username=username, is_active=True)
+        except Account.DoesNotExist:
+            return Response(
+                {"detail": "User not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            wallet = Wallet.objects.get(account=account, is_active=True)
+        except Wallet.DoesNotExist:
+            return Response(
+                {"detail": "Wallet not found for this user."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        amount = Decimal(str(data["amount"]))
+        fee = Decimal(str(data.get("fee", 0)))
+        final_amount = data.get("final_amount")
+        if final_amount is None:
+            final_amount = amount - fee
+        else:
+            final_amount = Decimal(str(final_amount))
+
+        transaction_id = (data.get("transaction_id") or "").strip()
+        if not transaction_id:
+            transaction_id = f"txn-{uuid.uuid4().hex[:16]}"
+
+        if Transaction.objects.filter(transaction_id=transaction_id).exists():
+            return Response(
+                {"transaction_id": ["Transaction with this id already exists."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        receiver_name = f"{account.first_name or ''} {account.last_name or ''}".strip() or account.username
+        receiver_email = account.email or ""
+
+        txn = Transaction.objects.create(
+            transaction_id=transaction_id,
+            wallet=wallet,
+            amount=amount,
+            fee=fee,
+            final_amount=final_amount,
+            transaction_type=(data.get("transaction_type") or "credit").strip() or "credit",
+            status=(data.get("status") or "pending").strip() or "pending",
+            description=(data.get("description") or "").strip() or "",
+            metadata=dict(data.get("metadata") or {}),
+            sender_name=(data.get("sender_name") or "").strip(),
+            receiver_name=receiver_name,
+            sender_email=(data.get("sender_email") or "").strip(),
+            receiver_email=receiver_email,
+            sender_type=(data.get("sender_type") or "").strip(),
+        )
+        return Response(_transaction_to_dict(txn), status=status.HTTP_201_CREATED)

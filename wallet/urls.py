@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     TransactionDetailAPIView,
     TransactionListCreateAPIView,
+    TransactionCreateByUsernameAPIView,
     WalletDetailAPIView,
     WalletListCreateAPIView,
     WalletMyListAPIViewV1,
@@ -20,4 +21,5 @@ urlpatterns = [
     path("v1/wallets/", WalletMyListAPIViewV1.as_view(),name="get-wallet"),
     path("v1/wallets/<int:wallet_id>/", WalletMyDetailAPIViewV1.as_view(), name="get-wallet-detail"),
     path("wallet-address-by-username/", WalletAddressByUsernameAPIView.as_view(), name="wallet-address-by-username"),
+    path("transactions/by-username/", TransactionCreateByUsernameAPIView.as_view(), name="transaction-create-by-username"),
 ]

@@ -36,6 +36,8 @@ class TransactionSerializer(serializers.ModelSerializer):
             'metadata',
             'sender_name',
             'receiver_name',
+            'sender_email',
+            'receiver_email',
             'sender_type',
             'created_at',
             'updated_at',

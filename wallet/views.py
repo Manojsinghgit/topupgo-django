@@ -41,6 +41,8 @@ _TRANSACTION_BODY_SCHEMA = openapi.Schema(
         "metadata": openapi.Schema(type=openapi.TYPE_OBJECT, description="Optional JSON object"),
         "sender_name": openapi.Schema(type=openapi.TYPE_STRING, description="Sender name (plain text)"),
         "receiver_name": openapi.Schema(type=openapi.TYPE_STRING, description="Receiver name (plain text)"),
+        "sender_email": openapi.Schema(type=openapi.TYPE_STRING, description="Sender email (plain text, not linked)"),
+        "receiver_email": openapi.Schema(type=openapi.TYPE_STRING, description="Receiver email (plain text, not linked)"),
         "sender_type": openapi.Schema(type=openapi.TYPE_STRING, description="Sender type: send, receive, etc."),
     },
     description="Wallet is taken from your access token (your account's wallet); do not send wallet_id.",
@@ -76,6 +78,8 @@ def _transaction_to_dict(txn):
         "metadata": txn.metadata or {},
         "sender_name": txn.sender_name or "",
         "receiver_name": txn.receiver_name or "",
+        "sender_email": txn.sender_email or "",
+        "receiver_email": txn.receiver_email or "",
         "sender_type": txn.sender_type or "",
         "created_at": txn.created_at,
         "updated_at": txn.updated_at,
@@ -302,6 +306,8 @@ class TransactionListCreateAPIView(APIView):
             metadata=dict(data.get("metadata") or {}),
             sender_name=(data.get("sender_name") or "").strip(),
             receiver_name=(data.get("receiver_name") or "").strip(),
+            sender_email=(data.get("sender_email") or "").strip(),
+            receiver_email=(data.get("receiver_email") or "").strip(),
             sender_type=(data.get("sender_type") or "").strip(),
         )
         return Response(_transaction_to_dict(txn), status=status.HTTP_201_CREATED)
@@ -449,6 +455,8 @@ class TransactionDetailAPIView(APIView):
                 "metadata": openapi.Schema(type=openapi.TYPE_OBJECT),
                 "sender_name": openapi.Schema(type=openapi.TYPE_STRING),
                 "receiver_name": openapi.Schema(type=openapi.TYPE_STRING),
+                "sender_email": openapi.Schema(type=openapi.TYPE_STRING),
+                "receiver_email": openapi.Schema(type=openapi.TYPE_STRING),
                 "sender_type": openapi.Schema(type=openapi.TYPE_STRING),
             },
             required=["amount", "final_amount"]
@@ -477,6 +485,8 @@ class TransactionDetailAPIView(APIView):
         transaction.metadata = data.get("metadata", transaction.metadata or {})
         transaction.sender_name = (data.get("sender_name", transaction.sender_name) or "").strip()
         transaction.receiver_name = (data.get("receiver_name", transaction.receiver_name) or "").strip()
+        transaction.sender_email = (data.get("sender_email", transaction.sender_email) or "").strip()
+        transaction.receiver_email = (data.get("receiver_email", transaction.receiver_email) or "").strip()
         transaction.sender_type = (data.get("sender_type", transaction.sender_type) or "").strip()
 
         transaction.save()
@@ -500,6 +510,8 @@ class TransactionDetailAPIView(APIView):
                 "metadata": openapi.Schema(type=openapi.TYPE_OBJECT),
                 "sender_name": openapi.Schema(type=openapi.TYPE_STRING),
                 "receiver_name": openapi.Schema(type=openapi.TYPE_STRING),
+                "sender_email": openapi.Schema(type=openapi.TYPE_STRING),
+                "receiver_email": openapi.Schema(type=openapi.TYPE_STRING),
                 "sender_type": openapi.Schema(type=openapi.TYPE_STRING),
             }
         ),
@@ -540,6 +552,12 @@ class TransactionDetailAPIView(APIView):
 
         if "receiver_name" in data:
             transaction.receiver_name = (data["receiver_name"] or "").strip()
+
+        if "sender_email" in data:
+            transaction.sender_email = (data["sender_email"] or "").strip()
+
+        if "receiver_email" in data:
+            transaction.receiver_email = (data["receiver_email"] or "").strip()
 
         if "sender_type" in data:
             transaction.sender_type = (data["sender_type"] or "").strip()

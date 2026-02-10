@@ -6,8 +6,7 @@ from .views import (
     WalletDetailAPIView,
     WalletListCreateAPIView,
     WalletMyListAPIViewV1,
-    WalletMyDetailAPIViewV1,
-    TransactionListAPIViewV1
+    WalletMyDetailAPIViewV1
 )
 
 app_name = "wallet"
@@ -19,5 +18,4 @@ urlpatterns = [
     path("transactions/<int:pk>/", TransactionDetailAPIView.as_view(), name="transaction-detail"),
     path("v1/wallets/", WalletMyListAPIViewV1.as_view(),name="get-wallet"),
     path("v1/wallets/<int:wallet_id>/", WalletMyDetailAPIViewV1.as_view(), name="get-wallet-detail"),
-    path("v1/transactions/", TransactionListAPIViewV1.as_view(),name="get-all-transaction"),
 ]

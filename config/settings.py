@@ -36,6 +36,8 @@ CSRF_TRUSTED_ORIGINS = [
     "https://api.topupgo.org",
     "https://topupgo.org",
     "https://www.topupgo.org",
+    "http://enggine.io",
+    "https://enggine.io",
     "http://localhost:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3000",
@@ -98,12 +100,15 @@ WSGI_APPLICATION = 'config.wsgi.application'
 CORS_ALLOWED_ORIGINS = [
     "https://topupgo.org",
     "https://www.topupgo.org",
+    "http://enggine.io",
+    "https://enggine.io",
     "http://localhost:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:3001",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
+    
 ]
 CORS_ALLOW_HEADERS = [
     "accept",

@@ -50,12 +50,13 @@ _TRANSACTION_BODY_SCHEMA = openapi.Schema(
     description="If authenticated, wallet is taken from your token. For external users, provide wallet_address.",
 )
 
-# No-auth API: save transaction by username; wallet & receiver filled from username
+# No-auth API: save transaction by username; username = receiver (always)
+# User sends their username, and that username becomes the receiver
 _TRANSACTION_BY_USERNAME_BODY_SCHEMA = openapi.Schema(
     type=openapi.TYPE_OBJECT,
     required=["username", "amount"],
     properties={
-        "username": openapi.Schema(type=openapi.TYPE_STRING, description="Receiver user's username (wallet & receiver details auto-filled)"),
+        "username": openapi.Schema(type=openapi.TYPE_STRING, description="Receiver's username (THIS USER WILL BE THE RECEIVER - wallet, receiver_name, receiver_email auto-filled from this user)"),
         "amount": openapi.Schema(type=openapi.TYPE_NUMBER, description="Transaction amount"),
         "fee": openapi.Schema(type=openapi.TYPE_NUMBER, default=0),
         "final_amount": openapi.Schema(type=openapi.TYPE_NUMBER, description="Optional; defaults to amount - fee"),
@@ -63,12 +64,12 @@ _TRANSACTION_BY_USERNAME_BODY_SCHEMA = openapi.Schema(
         "status": openapi.Schema(type=openapi.TYPE_STRING, default="pending"),
         "description": openapi.Schema(type=openapi.TYPE_STRING),
         "metadata": openapi.Schema(type=openapi.TYPE_OBJECT),
-        "sender_name": openapi.Schema(type=openapi.TYPE_STRING),
-        "sender_email": openapi.Schema(type=openapi.TYPE_STRING),
+        "sender_name": openapi.Schema(type=openapi.TYPE_STRING, description="Sender's name"),
+        "sender_email": openapi.Schema(type=openapi.TYPE_STRING, description="Sender's email"),
         "sender_type": openapi.Schema(type=openapi.TYPE_STRING, description="e.g. send, receive"),
         "transaction_id": openapi.Schema(type=openapi.TYPE_STRING, description="Optional; auto-generated if not sent"),
     },
-    description="No auth. Username = receiver user. Wallet, receiver_name, receiver_email are set from that user.",
+    description="NO AUTH TOKEN REQUIRED. Username sent = RECEIVER (always). Wallet, receiver_name (username), receiver_email auto-filled from that user's account.",
 )
 
 
@@ -782,14 +783,15 @@ class WalletAddressByUsernameAPIView(APIView):
 
 class TransactionCreateByUsernameAPIView(APIView):
     """
-    POST: Save transaction by username. No auth.
-    Username = receiver user. Wallet, receiver_name, receiver_email auto-filled from that user.
+    POST: Save transaction by username. NO AUTH TOKEN REQUIRED.
+    Username sent = RECEIVER (always).
+    Wallet, receiver_name (username), receiver_email auto-filled from that user's account.
     """
 
     @swagger_auto_schema(
         tags=["Transaction"],
-        operation_summary="Save transaction by username (no auth)",
-        operation_description="No auth token. Send username + amount + sender details. Wallet, receiver_name, receiver_email are filled from the user's account.",
+        operation_summary="Create transaction by username (no auth - username = receiver)",
+        operation_description="NO AUTH TOKEN REQUIRED. Send username (this user will be the RECEIVER) + amount + sender details. Wallet, receiver_name (username), receiver_email are auto-filled from that user's account.",
         request_body=_TRANSACTION_BY_USERNAME_BODY_SCHEMA,
         responses={
             201: openapi.Response(description="Transaction created"),
@@ -839,8 +841,10 @@ class TransactionCreateByUsernameAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        receiver_name = account.username
-        receiver_email = account.email or ""
+        # Username sent = RECEIVER (always)
+        # Fill receiver details from the account
+        receiver_name = account.username  # Receiver name = username
+        receiver_email = account.email or ""  # Receiver email = account email
 
         txn = Transaction.objects.create(
             transaction_id=transaction_id,

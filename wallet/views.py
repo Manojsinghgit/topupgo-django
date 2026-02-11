@@ -795,8 +795,8 @@ class TransactionCreateByUsernameAPIView(APIView):
         request_body=_TRANSACTION_BY_USERNAME_BODY_SCHEMA,
         responses={
             201: openapi.Response(description="Transaction created"),
+            200: openapi.Response(description="Error response (username invalid or wallet not found)"),
             400: openapi.Response(description="Validation error"),
-            404: openapi.Response(description="User or wallet not found"),
         },
     )
     def post(self, request):
@@ -811,16 +811,16 @@ class TransactionCreateByUsernameAPIView(APIView):
             account = Account.objects.get(username=username, is_active=True)
         except Account.DoesNotExist:
             return Response(
-                {"detail": "User not found."},
-                status=status.HTTP_404_NOT_FOUND,
+                {"error": "Username not found or invalid.", "username": username},
+                status=status.HTTP_200_OK,
             )
 
         try:
             wallet = Wallet.objects.get(account=account, is_active=True)
         except Wallet.DoesNotExist:
             return Response(
-                {"detail": "Wallet not found for this user."},
-                status=status.HTTP_404_NOT_FOUND,
+                {"error": "Wallet not found for this user.", "username": username},
+                status=status.HTTP_200_OK,
             )
 
         amount = Decimal(str(data["amount"]))

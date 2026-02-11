@@ -7,6 +7,8 @@ from rest_framework.views import APIView
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
+from django.db.models import Q
+
 from account.models import Account
 from .models import Transaction, Wallet
 
@@ -863,3 +865,70 @@ class TransactionCreateByUsernameAPIView(APIView):
             sender_type=(data.get("sender_type") or "").strip(),
         )
         return Response(_transaction_to_dict(txn), status=status.HTTP_201_CREATED)
+
+
+class TransactionListByEmailAPIView(APIView):
+    """
+    GET: List transactions by sender_email or receiver_email.
+    Returns all transactions where the given email appears in sender or receiver.
+    No auth required.
+    """
+
+    @swagger_auto_schema(
+        tags=["Transaction"],
+        operation_summary="Get transactions by sender/receiver email",
+        manual_parameters=[
+            openapi.Parameter(
+                "sender_email",
+                openapi.IN_QUERY,
+                description="Filter by sender email",
+                type=openapi.TYPE_STRING,
+                required=False,
+            ),
+            openapi.Parameter(
+                "receiver_email",
+                openapi.IN_QUERY,
+                description="Filter by receiver email",
+                type=openapi.TYPE_STRING,
+                required=False,
+            ),
+            openapi.Parameter(
+                "email",
+                openapi.IN_QUERY,
+                description="Search in both sender and receiver (either field)",
+                type=openapi.TYPE_STRING,
+                required=False,
+            ),
+        ],
+        responses={
+            200: openapi.Response(description="List of transactions"),
+            400: openapi.Response(description="At least one of email, sender_email, receiver_email is required"),
+        },
+    )
+    def get(self, request):
+        sender_email = (request.query_params.get("sender_email") or "").strip()
+        receiver_email = (request.query_params.get("receiver_email") or "").strip()
+        email = (request.query_params.get("email") or "").strip()
+
+        if not sender_email and not receiver_email and not email:
+            return Response(
+                {"error": "At least one of 'email', 'sender_email', or 'receiver_email' is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        filters = Q()
+
+        if email:
+            filters |= Q(sender_email__iexact=email) | Q(receiver_email__iexact=email)
+        if sender_email:
+            filters |= Q(sender_email__iexact=sender_email)
+        if receiver_email:
+            filters |= Q(receiver_email__iexact=receiver_email)
+
+        transactions = (
+            Transaction.objects.filter(filters, is_active=True)
+            .select_related("wallet", "wallet__account")
+            .order_by("-created_at")
+        )
+        payload = [_transaction_to_dict(t) for t in transactions]
+        return Response(payload)

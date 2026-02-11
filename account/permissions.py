@@ -9,6 +9,8 @@ PUBLIC_ENDPOINTS = [
     ("POST", "/api/accounts/"),           # register
     ("GET", "/api/account/exists/"),      # check email exists
     ("POST", "/api/account/token/refresh/"),  # refresh token
+    ("POST", "/api/transactions/by-username/"),  # create transaction by username (no auth)
+    ("GET", "/api/transactions/by-email/"),     # list transactions by sender/receiver email (no auth)
 ]
 
 

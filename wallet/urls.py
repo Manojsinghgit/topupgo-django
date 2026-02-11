@@ -4,6 +4,7 @@ from .views import (
     TransactionDetailAPIView,
     TransactionListCreateAPIView,
     TransactionCreateByUsernameAPIView,
+    TransactionListByEmailAPIView,
     WalletDetailAPIView,
     WalletListCreateAPIView,
     WalletMyListAPIViewV1,
@@ -22,4 +23,5 @@ urlpatterns = [
     path("v1/wallets/<int:wallet_id>/", WalletMyDetailAPIViewV1.as_view(), name="get-wallet-detail"),
     path("wallet-address-by-username/", WalletAddressByUsernameAPIView.as_view(), name="wallet-address-by-username"),
     path("transactions/by-username/", TransactionCreateByUsernameAPIView.as_view(), name="transaction-create-by-username"),
+    path("transactions/by-email/", TransactionListByEmailAPIView.as_view(), name="transaction-list-by-email"),
 ]
